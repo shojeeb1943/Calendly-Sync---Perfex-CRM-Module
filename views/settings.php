@@ -133,6 +133,10 @@ function copyWebhookUrl() {
     alert_float('success', '<?php echo _l('calendly_sync_url_copied'); ?>');
 }
 
+var csrfData = {
+    '<?php echo $this->security->get_csrf_token_name(); ?>': '<?php echo $this->security->get_csrf_hash(); ?>'
+};
+
 $(function () {
     $('#btn-setup-webhook').on('click', function () {
         var $btn = $(this).prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Setting up...');
@@ -141,6 +145,7 @@ $(function () {
             url:      admin_url + 'calendly_sync/setup_webhook',
             type:     'POST',
             dataType: 'json',
+            data:     csrfData,
             success: function (r) {
                 alert_float(r.success ? 'success' : 'danger', r.message);
                 if (r.success) {
@@ -166,6 +171,7 @@ $(function () {
             url:      admin_url + 'calendly_sync/delete_webhook',
             type:     'POST',
             dataType: 'json',
+            data:     csrfData,
             success: function (r) {
                 alert_float(r.success ? 'success' : 'danger', r.message);
                 if (r.success) {
