@@ -4,13 +4,14 @@
  * @package     Perfex CRM — Calendly Master Sync Module
  *
  * Routes:
- *  GET  admin/calendly_sync                         → index()          Dashboard
- *  GET  admin/calendly_sync/settings                → settings()       Settings form
- *  POST admin/calendly_sync/save_settings           → save_settings()  Persist settings
- *  POST admin/calendly_sync/setup_webhook           → setup_webhook()  Register with Calendly API
- *  POST admin/calendly_sync/delete_webhook          → delete_webhook() Unregister webhook
- *  POST admin/calendly_sync/sync_past               → sync_past()      Fetch historical events
- *  POST admin/calendly_sync/webhook                 → webhook()        Calendly callback (CSRF-free)
+ *  GET  admin/calendly_sync                         → index()           Dashboard
+ *  GET  admin/calendly_sync/settings                → settings()        Settings form
+ *  POST admin/calendly_sync/save_settings           → save_settings()   Persist settings
+ *  POST admin/calendly_sync/setup_webhook           → setup_webhook()   Register with Calendly API
+ *  POST admin/calendly_sync/delete_webhook          → delete_webhook()  Unregister webhook
+ *  POST admin/calendly_sync/sync_past               → sync_past()       Fetch historical events
+ *  POST admin/calendly_sync/get_events_dt           → get_events_dt()   DataTables AJAX source
+ *  POST admin/calendly_sync/webhook                 → webhook()         Calendly callback (CSRF-free)
  */
 
 defined('BASEPATH') or exit('No direct script access allowed');
@@ -34,11 +35,8 @@ class Calendly_sync extends AdminController
             access_denied(CALENDLY_SYNC_MODULE_NAME);
         }
 
-        $limit = (int) ($this->calendly_sync_model->get_setting('calendly_display_limit') ?: 20);
-
-        $data['events'] = $this->calendly_sync_model->get_all_events($limit);
-        $data['stats']  = $this->calendly_sync_model->get_stats();
-        $data['title']  = _l('calendly_sync_page_title');
+        $data['stats'] = $this->calendly_sync_model->get_stats();
+        $data['title'] = _l('calendly_sync_page_title');
 
         $this->load->view('calendly_sync/dashboard', $data);
     }
@@ -54,12 +52,12 @@ class Calendly_sync extends AdminController
             access_denied(CALENDLY_SYNC_MODULE_NAME);
         }
 
-        $data['api_token']      = $this->calendly_sync_model->get_setting('calendly_api_token');
-        $data['display_limit']  = $this->calendly_sync_model->get_setting('calendly_display_limit') ?: '20';
-        $data['webhook_uuid']   = $this->calendly_sync_model->get_setting('calendly_webhook_uuid');
-        $data['signing_key']    = $this->calendly_sync_model->get_setting('calendly_webhook_signing_key');
-        $data['webhook_url']    = base_url('admin/calendly_sync/webhook');
-        $data['title']          = _l('calendly_sync_settings_title');
+        $data['api_token']     = $this->calendly_sync_model->get_setting('calendly_api_token');
+        $data['display_limit'] = $this->calendly_sync_model->get_setting('calendly_display_limit') ?: '20';
+        $data['webhook_uuid']  = $this->calendly_sync_model->get_setting('calendly_webhook_uuid');
+        $data['signing_key']   = $this->calendly_sync_model->get_setting('calendly_webhook_signing_key');
+        $data['webhook_url']   = base_url('admin/calendly_sync/webhook');
+        $data['title']         = _l('calendly_sync_settings_title');
 
         $this->load->view('calendly_sync/settings', $data);
     }
@@ -112,12 +110,13 @@ class Calendly_sync extends AdminController
         // Step 1: get current user to find org URI
         $me = $this->_calendly_get('/users/me', $token);
         if (!$me || empty($me['resource']['current_organization'])) {
-            echo json_encode(['success' => false, 'message' => _l('calendly_sync_webhook_error') . 'Could not fetch user info.']);
+            $msg = $me === null
+                ? 'Could not connect to the Calendly API. Check your server SSL/network settings.'
+                : 'Could not fetch user info. Verify your Personal Access Token.';
+            echo json_encode(['success' => false, 'message' => _l('calendly_sync_webhook_error') . $msg]);
             return;
         }
         $org_uri = $me['resource']['current_organization'];
-
-        // Save org URI for future use
         $this->calendly_sync_model->save_setting('calendly_org_uri', $org_uri);
 
         // Step 2: create webhook subscription
@@ -131,15 +130,16 @@ class Calendly_sync extends AdminController
         $result = $this->_calendly_post('/webhook_subscriptions', $token, $payload);
 
         if (!$result || empty($result['resource']['uri'])) {
-            $msg = isset($result['message']) ? $result['message'] : 'Unknown error from Calendly API.';
+            $msg = $result === null
+                ? 'Could not connect to the Calendly API.'
+                : ($result['message'] ?? 'Unknown error from Calendly API.');
             echo json_encode(['success' => false, 'message' => _l('calendly_sync_webhook_error') . $msg]);
             return;
         }
 
-        // Extract UUID from the webhook URI
-        $uri   = $result['resource']['uri'];
-        $uuid  = basename($uri);
-        $skey  = $result['resource']['signing_key'] ?? '';
+        $uri  = $result['resource']['uri'];
+        $uuid = basename($uri);
+        $skey = $result['resource']['signing_key'] ?? '';
 
         $this->calendly_sync_model->save_setting('calendly_webhook_uuid', $uuid);
         $this->calendly_sync_model->save_setting('calendly_webhook_signing_key', $skey);
@@ -169,7 +169,12 @@ class Calendly_sync extends AdminController
             return;
         }
 
-        $this->_calendly_delete('/webhook_subscriptions/' . $uuid, $token);
+        $ok = $this->_calendly_delete('/webhook_subscriptions/' . $uuid, $token);
+
+        if (!$ok) {
+            echo json_encode(['success' => false, 'message' => _l('calendly_sync_webhook_error') . 'Could not reach the Calendly API. Check logs for details.']);
+            return;
+        }
 
         $this->calendly_sync_model->save_setting('calendly_webhook_uuid', '');
         $this->calendly_sync_model->save_setting('calendly_webhook_signing_key', '');
@@ -250,6 +255,10 @@ class Calendly_sync extends AdminController
 
         if (empty($org_uri)) {
             $me = $this->_calendly_get('/users/me', $token);
+            if ($me === null) {
+                echo json_encode(['success' => false, 'message' => 'Could not connect to the Calendly API.']);
+                return;
+            }
             $org_uri = $me['resource']['current_organization'] ?? '';
             if ($org_uri) {
                 $this->calendly_sync_model->save_setting('calendly_org_uri', $org_uri);
@@ -265,7 +274,12 @@ class Calendly_sync extends AdminController
 
         $result = $this->_calendly_get('/scheduled_events?' . $params, $token);
 
-        if (!$result || empty($result['collection'])) {
+        if ($result === null) {
+            echo json_encode(['success' => false, 'message' => 'Could not connect to the Calendly API.']);
+            return;
+        }
+
+        if (empty($result['collection'])) {
             echo json_encode(['success' => true, 'synced' => 0, 'message' => 'No events found.']);
             return;
         }
@@ -277,6 +291,130 @@ class Calendly_sync extends AdminController
         }
 
         echo json_encode(['success' => true, 'synced' => $synced, 'message' => "Synced {$synced} event(s)."]);
+    }
+
+    // ─── DataTables AJAX source ───────────────────────────────────────────────
+
+    /**
+     * Returns server-side paginated events for the dashboard DataTable.
+     *
+     * @route POST admin/calendly_sync/get_events_dt
+     */
+    public function get_events_dt(): void
+    {
+        header('Content-Type: application/json');
+
+        if (!staff_can('view', CALENDLY_SYNC_MODULE_NAME)) {
+            echo json_encode(['draw' => 0, 'recordsTotal' => 0, 'recordsFiltered' => 0, 'data' => []]);
+            return;
+        }
+
+        $draw   = (int) $this->input->post('draw');
+        $start  = max(0, (int) $this->input->post('start'));
+        $length = max(1, (int) ($this->input->post('length') ?: 25));
+        $search = $this->input->post('search');
+        $term   = is_array($search) ? trim($search['value'] ?? '') : '';
+
+        // Map DataTables column index → DB column (only sortable columns)
+        $col_map = [
+            0 => 'start_time',
+            1 => 'invitee_name',
+            2 => 'event_type',
+            4 => 'status',
+        ];
+        $order_raw = $this->input->post('order');
+        $order_idx = is_array($order_raw) ? (int) ($order_raw[0]['column'] ?? 0) : 0;
+        $order_dir = is_array($order_raw) && strtolower($order_raw[0]['dir'] ?? '') === 'asc' ? 'ASC' : 'DESC';
+        $sort_col  = $col_map[$order_idx] ?? 'start_time';
+
+        $total    = $this->calendly_sync_model->count_events();
+        $filtered = $term !== '' ? $this->calendly_sync_model->count_events_filtered($term) : $total;
+        $rows     = $this->calendly_sync_model->get_events_paged($start, $length, $term, $sort_col, $order_dir);
+
+        $data = [];
+        foreach ($rows as $row) {
+            $data[] = [
+                $this->_dt_cell_time($row),
+                $this->_dt_cell_invitee($row),
+                htmlspecialchars($row['event_type']),
+                $this->_dt_cell_platform($row),
+                $this->_dt_cell_contact($row),
+                $this->_dt_cell_action($row),
+            ];
+        }
+
+        echo json_encode([
+            'draw'            => $draw,
+            'recordsTotal'    => $total,
+            'recordsFiltered' => $filtered,
+            'data'            => $data,
+        ]);
+    }
+
+    // ─── Private: DataTable cell formatters ───────────────────────────────────
+
+    private function _dt_cell_time(array $row): string
+    {
+        if (!$row['start_time']) {
+            return '&mdash;';
+        }
+        $ts   = strtotime($row['start_time']);
+        $diff = (int) round(($ts - time()) / 60);
+        $out  = '<strong>' . date('M j, Y H:i', $ts) . '</strong>';
+        if ($diff > 0 && $diff <= 120) {
+            $out .= '<br><small class="text-warning"><i class="fa fa-clock-o"></i> '
+                . _l('calendly_sync_starts_in') . ' ' . $diff . ' ' . _l('calendly_sync_minutes') . '</small>';
+        }
+        return $out;
+    }
+
+    private function _dt_cell_invitee(array $row): string
+    {
+        return '<strong>' . htmlspecialchars($row['invitee_name']) . '</strong>'
+            . '<br><small class="text-muted">' . htmlspecialchars($row['invitee_email']) . '</small>';
+    }
+
+    private function _dt_cell_platform(array $row): string
+    {
+        $url = strtolower($row['join_url'] ?? '');
+        if (!$url) {
+            return '&mdash;';
+        }
+        if (strpos($url, 'zoom.us') !== false) {
+            return '<i class="fa fa-video-camera text-primary"></i> Zoom';
+        }
+        if (strpos($url, 'meet.google') !== false) {
+            return '<i class="fa fa-google text-danger"></i> Meet';
+        }
+        if (strpos($url, 'teams.microsoft') !== false) {
+            return '<i class="fa fa-windows text-primary"></i> Teams';
+        }
+        return '<i class="fa fa-link text-muted"></i>';
+    }
+
+    private function _dt_cell_contact(array $row): string
+    {
+        if ($row['lead_id']) {
+            return '<a href="' . admin_url('leads/index/' . (int) $row['lead_id']) . '" target="_blank" class="label label-info">'
+                . '<i class="fa fa-user"></i> ' . _l('calendly_sync_known_contact') . '</a>';
+        }
+        if ($row['client_id']) {
+            return '<a href="' . admin_url('clients/client/' . (int) $row['client_id']) . '" target="_blank" class="label label-success">'
+                . '<i class="fa fa-building"></i> ' . _l('calendly_sync_known_contact') . '</a>';
+        }
+        return '<span class="text-muted">&mdash;</span>';
+    }
+
+    private function _dt_cell_action(array $row): string
+    {
+        if ($row['status'] !== 'active') {
+            return '<span class="label label-danger">' . _l('calendly_sync_canceled') . '</span>';
+        }
+        if (!empty($row['join_url'])) {
+            return '<a href="' . htmlspecialchars($row['join_url']) . '" target="_blank" class="btn btn-success btn-xs">'
+                . '<i class="fa fa-sign-in"></i> ' . _l('calendly_sync_join_meeting') . '</a>';
+        }
+        return '&mdash;';
     }
 
     // ─── Private: webhook handlers ────────────────────────────────────────────
@@ -308,7 +446,6 @@ class Calendly_sync extends AdminController
 
         $this->calendly_sync_model->upsert_event($data);
 
-        // Cross-reference with CRM
         $email     = $payload['email'] ?? '';
         $event_row = $this->calendly_sync_model->get_event_by_uuid($uuid);
         if ($event_row && $email) {
@@ -339,7 +476,6 @@ class Calendly_sync extends AdminController
             return;
         }
 
-        // Fetch invitees for this event to get name/email
         $inv_result = $this->_calendly_get('/scheduled_events/' . $uuid . '/invitees?count=1', $token);
         $invitee    = $inv_result['collection'][0] ?? [];
 
@@ -382,10 +518,18 @@ class Calendly_sync extends AdminController
                 'Content-Type: application/json',
             ],
             CURLOPT_TIMEOUT        => 20,
-            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
         ]);
         $response = curl_exec($ch);
+        $err      = curl_error($ch);
         curl_close($ch);
+
+        if ($err) {
+            log_message('error', '[calendly_sync] cURL GET ' . $path . ' failed: ' . $err);
+            return null;
+        }
+
         return $response ? json_decode($response, true) : null;
     }
 
@@ -401,14 +545,25 @@ class Calendly_sync extends AdminController
                 'Content-Type: application/json',
             ],
             CURLOPT_TIMEOUT        => 20,
-            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
         ]);
         $response = curl_exec($ch);
+        $err      = curl_error($ch);
         curl_close($ch);
+
+        if ($err) {
+            log_message('error', '[calendly_sync] cURL POST ' . $path . ' failed: ' . $err);
+            return null;
+        }
+
         return $response ? json_decode($response, true) : null;
     }
 
-    private function _calendly_delete(string $path, string $token): void
+    /**
+     * Returns true on HTTP 2xx or 404 (already deleted); false on cURL error.
+     */
+    private function _calendly_delete(string $path, string $token): bool
     {
         $ch = curl_init(CALENDLY_API_BASE . $path);
         curl_setopt_array($ch, [
@@ -419,10 +574,21 @@ class Calendly_sync extends AdminController
                 'Content-Type: application/json',
             ],
             CURLOPT_TIMEOUT        => 20,
-            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
         ]);
         curl_exec($ch);
+        $err  = curl_error($ch);
+        $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
+
+        if ($err) {
+            log_message('error', '[calendly_sync] cURL DELETE ' . $path . ' failed: ' . $err);
+            return false;
+        }
+
+        // 204 = success, 404 = already gone — both are acceptable outcomes
+        return ($code >= 200 && $code < 300) || $code === 404;
     }
 
     // ─── Private: signature verification ─────────────────────────────────────

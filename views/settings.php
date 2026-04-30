@@ -33,7 +33,9 @@
 
                 <!-- ── General Settings ── -->
                 <div class="panel panel-default">
-                    <div class="panel-heading"><h4 class="panel-title no-margin">General Settings</h4></div>
+                    <div class="panel-heading">
+                        <h4 class="panel-title no-margin"><?php echo _l('calendly_sync_general_settings'); ?></h4>
+                    </div>
                     <div class="panel-body">
                         <?php echo form_open(admin_url('calendly_sync/save_settings')); ?>
 
@@ -72,7 +74,9 @@
 
                 <!-- ── Webhook Setup ── -->
                 <div class="panel panel-default">
-                    <div class="panel-heading"><h4 class="panel-title no-margin"><?php echo _l('calendly_sync_webhook_section'); ?></h4></div>
+                    <div class="panel-heading">
+                        <h4 class="panel-title no-margin"><?php echo _l('calendly_sync_webhook_section'); ?></h4>
+                    </div>
                     <div class="panel-body">
 
                         <div class="form-group">
@@ -103,8 +107,6 @@
                             <?php endif; ?>
                         </div>
 
-                        <div id="webhook-alert" style="display:none;margin-bottom:10px;"></div>
-
                         <?php if (empty($webhook_uuid)): ?>
                             <button id="btn-setup-webhook" class="btn btn-success">
                                 <i class="fa fa-plug"></i> <?php echo _l('calendly_sync_setup_webhook'); ?>
@@ -128,6 +130,7 @@ function copyWebhookUrl() {
     var el = document.getElementById('webhook-url-display');
     el.select();
     document.execCommand('copy');
+    alert_float('success', '<?php echo _l('calendly_sync_url_copied'); ?>');
 }
 
 $(function () {
@@ -135,46 +138,46 @@ $(function () {
         var $btn = $(this).prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Setting up...');
 
         $.ajax({
-            url:  '<?php echo admin_url('calendly_sync/setup_webhook'); ?>',
-            type: 'POST',
+            url:      admin_url + 'calendly_sync/setup_webhook',
+            type:     'POST',
             dataType: 'json',
             success: function (r) {
-                var cls = r.success ? 'alert-success' : 'alert-danger';
-                $('#webhook-alert').removeClass().addClass('alert ' + cls).html(r.message).show();
+                alert_float(r.success ? 'success' : 'danger', r.message);
                 if (r.success) {
                     setTimeout(function () { location.reload(); }, 1500);
                 }
             },
             error: function () {
-                $('#webhook-alert').removeClass().addClass('alert alert-danger').html('Request failed.').show();
+                alert_float('danger', 'Request failed.');
             },
             complete: function () {
                 $btn.prop('disabled', false).html('<i class="fa fa-plug"></i> <?php echo _l('calendly_sync_setup_webhook'); ?>');
-            }
+            },
         });
     });
 
     $('#btn-delete-webhook').on('click', function () {
-        if (!confirm('Remove the webhook from Calendly? Events will stop syncing.')) return;
+        if (!confirm('<?php echo _l('calendly_sync_delete_webhook_confirm'); ?>')) {
+            return;
+        }
         var $btn = $(this).prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Removing...');
 
         $.ajax({
-            url:  '<?php echo admin_url('calendly_sync/delete_webhook'); ?>',
-            type: 'POST',
+            url:      admin_url + 'calendly_sync/delete_webhook',
+            type:     'POST',
             dataType: 'json',
             success: function (r) {
-                var cls = r.success ? 'alert-success' : 'alert-danger';
-                $('#webhook-alert').removeClass().addClass('alert ' + cls).html(r.message).show();
+                alert_float(r.success ? 'success' : 'danger', r.message);
                 if (r.success) {
                     setTimeout(function () { location.reload(); }, 1500);
                 }
             },
             error: function () {
-                $('#webhook-alert').removeClass().addClass('alert alert-danger').html('Request failed.').show();
+                alert_float('danger', 'Request failed.');
             },
             complete: function () {
                 $btn.prop('disabled', false).html('<i class="fa fa-trash"></i> <?php echo _l('calendly_sync_delete_webhook'); ?>');
-            }
+            },
         });
     });
 });

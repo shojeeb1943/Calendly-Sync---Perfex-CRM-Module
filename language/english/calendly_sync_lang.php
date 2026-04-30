@@ -35,13 +35,16 @@ $lang['calendly_sync_minutes']           = 'min';
 $lang['calendly_sync_no_meetings']       = 'No meetings found. They will appear here once Calendly sends a webhook.';
 
 // Settings page
-$lang['calendly_sync_settings_title']    = 'Calendly Sync Settings';
-$lang['calendly_sync_api_token']         = 'Personal Access Token (PAT)';
-$lang['calendly_sync_api_token_help']    = 'Generate from Calendly → Integrations → API & Webhooks';
-$lang['calendly_sync_display_limit']     = 'Dashboard Display Limit';
-$lang['calendly_sync_display_limit_help']= 'Maximum number of meetings to show on the dashboard';
-$lang['calendly_sync_save_settings']     = 'Save Settings';
-$lang['calendly_sync_saved']             = 'Settings saved successfully.';
+$lang['calendly_sync_settings_title']        = 'Calendly Sync Settings';
+$lang['calendly_sync_general_settings']      = 'General Settings';
+$lang['calendly_sync_api_token']             = 'Personal Access Token (PAT)';
+$lang['calendly_sync_api_token_help']        = 'Generate from Calendly → Integrations → API & Webhooks';
+$lang['calendly_sync_display_limit']         = 'Dashboard Display Limit';
+$lang['calendly_sync_display_limit_help']    = 'Maximum number of meetings to show on the dashboard';
+$lang['calendly_sync_save_settings']         = 'Save Settings';
+$lang['calendly_sync_saved']                 = 'Settings saved successfully.';
+$lang['calendly_sync_url_copied']            = 'Webhook URL copied to clipboard.';
+$lang['calendly_sync_delete_webhook_confirm']= 'Remove the webhook from Calendly? Events will stop syncing.';
 
 // Webhook setup
 $lang['calendly_sync_webhook_section']   = 'Webhook Setup';

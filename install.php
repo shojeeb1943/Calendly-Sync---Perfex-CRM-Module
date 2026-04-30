@@ -4,7 +4,7 @@
  * @package     Perfex CRM — Calendly Master Sync Module
  *
  * Activation script — executed once by calendly_sync_activation_hook().
- * Creates tblcalendly_events and the logs/ directory.
+ * Creates the calendly_events table and secures the logs/ directory.
  * Idempotent: safe to re-run on an existing installation.
  */
 
@@ -12,18 +12,13 @@ defined('BASEPATH') or exit('No direct script access allowed');
 
 $CI = &get_instance();
 
-// ─── tblcalendly_events ───────────────────────────────────────────────────────
+// ─── calendly_events table ────────────────────────────────────────────────────
 
-$table_exists = $CI->db->query(
-    "SELECT COUNT(*) AS cnt
-     FROM information_schema.TABLES
-     WHERE TABLE_SCHEMA = DATABASE()
-       AND TABLE_NAME   = 'tblcalendly_events'"
-)->row()->cnt;
+$table = db_prefix() . 'calendly_events';
 
-if (!$table_exists) {
+if (!$CI->db->table_exists($table)) {
     $CI->db->query("
-        CREATE TABLE `tblcalendly_events` (
+        CREATE TABLE `{$table}` (
             `id`            INT(11)      NOT NULL AUTO_INCREMENT,
             `event_uuid`    VARCHAR(255) NOT NULL DEFAULT '',
             `invitee_name`  VARCHAR(191) NOT NULL DEFAULT '',
@@ -45,14 +40,22 @@ if (!$table_exists) {
             KEY `idx_client_id` (`client_id`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ");
-    log_message('info', '[calendly_sync] Created table tblcalendly_events');
+    log_message('info', '[calendly_sync] Created table ' . $table);
 }
 
-// ─── Logs directory ───────────────────────────────────────────────────────────
+// ─── Secure logs directory ────────────────────────────────────────────────────
 
 $log_dir = CALENDLY_SYNC_MODULE_PATH . 'logs/';
 if (!is_dir($log_dir)) {
     @mkdir($log_dir, 0755, true);
+}
+
+// Deny direct HTTP access to log files containing PII webhook payloads
+if (!file_exists($log_dir . '.htaccess')) {
+    file_put_contents($log_dir . '.htaccess', "Order Deny,Allow\nDeny from all\n");
+}
+if (!file_exists($log_dir . 'index.html')) {
+    file_put_contents($log_dir . 'index.html', '');
 }
 
 log_message('info', '[calendly_sync] Module activated / upgraded.');

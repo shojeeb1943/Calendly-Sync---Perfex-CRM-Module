@@ -31,12 +31,12 @@ define('CALENDLY_SYNC_MODULE_PATH', dirname(__FILE__) . '/');
 define('CALENDLY_API_BASE', 'https://api.calendly.com');
 
 // ─── CSRF: allow Calendly to POST webhooks without a CSRF token ───────────────
+// Only the admin-routed endpoint is valid; the bare path does not exist.
 
 hooks()->add_filter('csrf_exclude_uris', 'calendly_sync_csrf_exclude_uris');
 
 function calendly_sync_csrf_exclude_uris(array $exclude_uris): array
 {
-    $exclude_uris[] = 'calendly_sync/webhook';
     $exclude_uris[] = 'admin/calendly_sync/webhook';
     return $exclude_uris;
 }
@@ -57,7 +57,40 @@ function calendly_sync_activation_hook(): void
 
 function calendly_sync_deactivation_hook(): void
 {
-    // No-op. Preserve tblcalendly_events data between activations.
+    $token = (string) get_option('calendly_api_token');
+    $uuid  = (string) get_option('calendly_webhook_uuid');
+
+    if (empty($token) || empty($uuid)) {
+        log_message('info', '[calendly_sync] Deactivation: no webhook registered, skipping API call.');
+        return;
+    }
+
+    // Delete the webhook from Calendly so it stops pinging a dead URL
+    $ch = curl_init(CALENDLY_API_BASE . '/webhook_subscriptions/' . $uuid);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_CUSTOMREQUEST  => 'DELETE',
+        CURLOPT_HTTPHEADER     => [
+            'Authorization: Bearer ' . $token,
+            'Content-Type: application/json',
+        ],
+        CURLOPT_TIMEOUT        => 10,
+        CURLOPT_SSL_VERIFYPEER => true,
+        CURLOPT_SSL_VERIFYHOST => 2,
+    ]);
+    curl_exec($ch);
+    $err  = curl_error($ch);
+    $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    // 204 = deleted, 404 = already gone — both mean local state can be cleared
+    if (empty($err) && ($code === 204 || $code === 404)) {
+        update_option('calendly_webhook_uuid', '');
+        update_option('calendly_webhook_signing_key', '');
+        log_message('info', '[calendly_sync] Deactivation: webhook deleted from Calendly (HTTP ' . $code . ').');
+    } else {
+        log_message('error', '[calendly_sync] Deactivation: webhook deletion failed. HTTP=' . $code . ' cURL=' . $err);
+    }
 }
 
 // ─── Admin init: sidebar menu + permissions ───────────────────────────────────

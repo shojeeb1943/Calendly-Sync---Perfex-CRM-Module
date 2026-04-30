@@ -4,6 +4,7 @@
  * @package     Perfex CRM — Calendly Master Sync Module
  *
  * Data-access layer. All SQL lives here; no raw queries in the controller.
+ * Uses db_prefix() throughout so installations with custom prefixes work correctly.
  */
 
 defined('BASEPATH') or exit('No direct script access allowed');
@@ -18,13 +19,13 @@ class Calendly_sync_model extends App_Model
     // ─── Read ─────────────────────────────────────────────────────────────────
 
     /**
-     * Upcoming active meetings, ordered by start_time ASC.
+     * Upcoming active meetings ordered by start_time ASC (used by the widget).
      */
     public function get_upcoming_events(int $limit = 20): array
     {
         return $this->db
             ->select('*')
-            ->from('tblcalendly_events')
+            ->from(db_prefix() . 'calendly_events')
             ->where('status', 'active')
             ->where('start_time >=', date('Y-m-d H:i:s'))
             ->order_by('start_time', 'ASC')
@@ -34,13 +35,13 @@ class Calendly_sync_model extends App_Model
     }
 
     /**
-     * All events for the dashboard table (most recent first).
+     * All events for legacy/fallback use (most recent first).
      */
     public function get_all_events(int $limit = 50): array
     {
         return $this->db
             ->select('*')
-            ->from('tblcalendly_events')
+            ->from(db_prefix() . 'calendly_events')
             ->order_by('start_time', 'DESC')
             ->limit($limit)
             ->get()
@@ -54,27 +55,28 @@ class Calendly_sync_model extends App_Model
     {
         $today_start = date('Y-m-d') . ' 00:00:00';
         $today_end   = date('Y-m-d') . ' 23:59:59';
+        $tbl         = db_prefix() . 'calendly_events';
 
-        $total = $this->db->count_all('tblcalendly_events');
+        $total = $this->db->count_all($tbl);
 
         $today = $this->db
             ->where('start_time >=', $today_start)
             ->where('start_time <=', $today_end)
             ->where('status', 'active')
-            ->count_all_results('tblcalendly_events');
+            ->count_all_results($tbl);
 
         $active = $this->db
             ->where('status', 'active')
-            ->count_all_results('tblcalendly_events');
+            ->count_all_results($tbl);
 
         $canceled = $this->db
             ->where('status', 'canceled')
-            ->count_all_results('tblcalendly_events');
+            ->count_all_results($tbl);
 
         $with_lead = $this->db
             ->where('lead_id IS NOT NULL', null, false)
             ->or_where('client_id IS NOT NULL', null, false)
-            ->count_all_results('tblcalendly_events');
+            ->count_all_results($tbl);
 
         return compact('total', 'today', 'active', 'canceled', 'with_lead');
     }
@@ -86,9 +88,64 @@ class Calendly_sync_model extends App_Model
     {
         $row = $this->db
             ->where('event_uuid', $uuid)
-            ->get('tblcalendly_events')
+            ->get(db_prefix() . 'calendly_events')
             ->row_array();
         return $row ?: null;
+    }
+
+    // ─── DataTable server-side support ────────────────────────────────────────
+
+    /**
+     * Total row count (unfiltered) for DataTables recordsTotal.
+     */
+    public function count_events(): int
+    {
+        return (int) $this->db->count_all(db_prefix() . 'calendly_events');
+    }
+
+    /**
+     * Row count matching a search term for DataTables recordsFiltered.
+     */
+    public function count_events_filtered(string $search): int
+    {
+        return (int) $this->db
+            ->group_start()
+            ->like('invitee_name', $search)
+            ->or_like('invitee_email', $search)
+            ->or_like('event_type', $search)
+            ->group_end()
+            ->count_all_results(db_prefix() . 'calendly_events');
+    }
+
+    /**
+     * Paginated + filtered + sorted rows for DataTables AJAX response.
+     *
+     * @param string $sort  Column name (validated against allowlist before use)
+     * @param string $dir   'ASC' or 'DESC'
+     */
+    public function get_events_paged(int $start, int $length, string $search = '', string $sort = 'start_time', string $dir = 'DESC'): array
+    {
+        // Allowlist prevents column-injection via DataTables order parameter
+        $allowed = ['start_time', 'invitee_name', 'invitee_email', 'event_type', 'status'];
+        $sort    = in_array($sort, $allowed, true) ? $sort : 'start_time';
+        $dir     = strtoupper($dir) === 'ASC' ? 'ASC' : 'DESC';
+
+        if ($search !== '') {
+            $this->db
+                ->group_start()
+                ->like('invitee_name', $search)
+                ->or_like('invitee_email', $search)
+                ->or_like('event_type', $search)
+                ->group_end();
+        }
+
+        return $this->db
+            ->select('*')
+            ->from(db_prefix() . 'calendly_events')
+            ->order_by($sort, $dir)
+            ->limit($length, $start)
+            ->get()
+            ->result_array();
     }
 
     // ─── Write ────────────────────────────────────────────────────────────────
@@ -102,10 +159,10 @@ class Calendly_sync_model extends App_Model
 
         if ($existing) {
             $this->db->where('event_uuid', $data['event_uuid']);
-            return $this->db->update('tblcalendly_events', $data);
+            return $this->db->update(db_prefix() . 'calendly_events', $data);
         }
 
-        return $this->db->insert('tblcalendly_events', $data);
+        return $this->db->insert(db_prefix() . 'calendly_events', $data);
     }
 
     /**
@@ -115,7 +172,7 @@ class Calendly_sync_model extends App_Model
     {
         return $this->db
             ->where('event_uuid', $uuid)
-            ->update('tblcalendly_events', ['status' => 'canceled']);
+            ->update(db_prefix() . 'calendly_events', ['status' => 'canceled']);
     }
 
     /**
@@ -125,7 +182,7 @@ class Calendly_sync_model extends App_Model
     {
         return $this->db
             ->where('id', $event_id)
-            ->update('tblcalendly_events', [
+            ->update(db_prefix() . 'calendly_events', [
                 'lead_id'   => $lead_id,
                 'client_id' => $client_id,
             ]);
@@ -141,7 +198,7 @@ class Calendly_sync_model extends App_Model
         $row = $this->db
             ->select('id')
             ->where('email', $email)
-            ->get('tblleads')
+            ->get(db_prefix() . 'leads')
             ->row_array();
         return $row ? (int) $row['id'] : null;
     }
@@ -154,7 +211,7 @@ class Calendly_sync_model extends App_Model
         $row = $this->db
             ->select('userid')
             ->where('email', $email)
-            ->get('tblclients')
+            ->get(db_prefix() . 'clients')
             ->row_array();
         return $row ? (int) $row['userid'] : null;
     }
