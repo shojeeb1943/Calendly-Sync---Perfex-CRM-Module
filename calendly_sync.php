@@ -3,7 +3,7 @@
  * @file        calendly_sync.php
  * @package     Perfex CRM — Calendly Master Sync Module
  * @version     1.0.0
- * @author      Format Design
+ * @author      Bytesis
  *
  * Module bootstrap. Loaded by Perfex CRM on every request when the module is
  * active. Defines constants, registers CSRF exclusions, language files, hooks,
@@ -17,7 +17,7 @@ Module Name: Calendly Master Sync
 Description: Real-time Calendly meeting sync for Perfex CRM via webhooks
 Version: 1.0.0
 Requires at least: 2.3.*
-Author: Format Design
+Author: Bytesis
 */
 
 // ─── Module identity ──────────────────────────────────────────────────────────
