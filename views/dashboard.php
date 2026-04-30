@@ -76,6 +76,8 @@
     </div>
 </div>
 
+<?php init_tail(); ?>
+
 <script>
 $(function () {
     var CalendlyTable = $('#calendly-events-dt').DataTable({
@@ -128,5 +130,3 @@ $(function () {
     });
 });
 </script>
-
-<?php init_tail(); ?>

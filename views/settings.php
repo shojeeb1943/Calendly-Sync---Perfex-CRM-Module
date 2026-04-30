@@ -125,6 +125,8 @@
     </div>
 </div>
 
+<?php init_tail(); ?>
+
 <script>
 function copyWebhookUrl() {
     var el = document.getElementById('webhook-url-display');
@@ -188,5 +190,3 @@ $(function () {
     });
 });
 </script>
-
-<?php init_tail(); ?>
