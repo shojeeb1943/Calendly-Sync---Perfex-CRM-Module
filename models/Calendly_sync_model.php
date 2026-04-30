@@ -49,6 +49,51 @@ class Calendly_sync_model extends App_Model
     }
 
     /**
+     * Active + future events for the Upcoming tab, ordered by start_time ASC.
+     */
+    public function get_upcoming_events_list(int $limit = 200): array
+    {
+        return $this->db
+            ->select('*')
+            ->from(db_prefix() . 'calendly_events')
+            ->where('start_time >=', date('Y-m-d H:i:s'))
+            ->order_by('start_time', 'ASC')
+            ->limit($limit)
+            ->get()
+            ->result_array();
+    }
+
+    /**
+     * Past events for the Past tab, ordered by start_time DESC.
+     */
+    public function get_past_events_list(int $limit = 200): array
+    {
+        return $this->db
+            ->select('*')
+            ->from(db_prefix() . 'calendly_events')
+            ->where('start_time <', date('Y-m-d H:i:s'))
+            ->order_by('start_time', 'DESC')
+            ->limit($limit)
+            ->get()
+            ->result_array();
+    }
+
+    /**
+     * Events within a date range (inclusive) for the Date Range tab.
+     */
+    public function get_events_by_date_range(string $from, string $to): array
+    {
+        return $this->db
+            ->select('*')
+            ->from(db_prefix() . 'calendly_events')
+            ->where('start_time >=', $from . ' 00:00:00')
+            ->where('start_time <=', $to . ' 23:59:59')
+            ->order_by('start_time', 'ASC')
+            ->get()
+            ->result_array();
+    }
+
+    /**
      * Dashboard stat cards.
      */
     public function get_stats(): array

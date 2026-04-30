@@ -58,6 +58,11 @@ $lang['calendly_sync_webhook_registered']= 'Webhook registered successfully!';
 $lang['calendly_sync_webhook_deleted']   = 'Webhook removed.';
 $lang['calendly_sync_webhook_error']     = 'Error communicating with Calendly API: ';
 
+// Tabs
+$lang['calendly_sync_tab_upcoming']      = 'Upcoming';
+$lang['calendly_sync_tab_past']          = 'Past';
+$lang['calendly_sync_tab_date_range']    = 'Date Range';
+
 // Widget
 $lang['calendly_sync_widget_title']      = 'Upcoming Meetings';
 $lang['calendly_sync_widget_view_all']   = 'View All Meetings';

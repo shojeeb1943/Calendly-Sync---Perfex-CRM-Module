@@ -351,6 +351,42 @@ class Calendly_sync extends AdminController
         ]);
     }
 
+    // ─── Tabbed events list AJAX source ──────────────────────────────────────
+
+    /**
+     * Returns JSON events for the Calendly-style tabbed list view.
+     *
+     * @route POST admin/calendly_sync/get_events_list
+     */
+    public function get_events_list(): void
+    {
+        header('Content-Type: application/json');
+
+        if (!staff_can('view', CALENDLY_SYNC_MODULE_NAME)) {
+            echo json_encode(['success' => false, 'events' => []]);
+            return;
+        }
+
+        $tab       = $this->input->post('tab') ?: 'upcoming';
+        $date_from = (string) ($this->input->post('date_from') ?: '');
+        $date_to   = (string) ($this->input->post('date_to') ?: '');
+
+        switch ($tab) {
+            case 'past':
+                $events = $this->calendly_sync_model->get_past_events_list(200);
+                break;
+            case 'date_range':
+                $events = ($date_from !== '' && $date_to !== '')
+                    ? $this->calendly_sync_model->get_events_by_date_range($date_from, $date_to)
+                    : [];
+                break;
+            default:
+                $events = $this->calendly_sync_model->get_upcoming_events_list(200);
+        }
+
+        echo json_encode(['success' => true, 'events' => $events]);
+    }
+
     // ─── Private: DataTable cell formatters ───────────────────────────────────
 
     private function _dt_cell_time(array $row): string
